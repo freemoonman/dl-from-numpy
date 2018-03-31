@@ -44,15 +44,24 @@ def _get_padding_shape(input_shape, filter_shape, stride_shape, rank=2):
         raise NotImplementedError
 
 
-def get_conv_output_shape(input_shape, filter_shape, stride_shape, rank=2):
+def get_conv_output_shape(input_shape,
+                          filter_shape,
+                          stride_shape,
+                          padding,
+                          rank=2):
     if rank == 2:
         batch_size, input_h, input_w, channels = input_shape
         filter_h, filter_w = filter_shape
         stride_h, stride_w = stride_shape
-        padding_h, padding_w = _get_padding_shape(input_shape,
-                                                  filter_shape,
-                                                  stride_shape,
-                                                  rank=2)
+        if padding == 'same':
+            padding_h, padding_w = _get_padding_shape(input_shape,
+                                                      filter_shape,
+                                                      stride_shape,
+                                                      rank=2)
+        elif padding == 'valid':
+            padding_h, padding_w = 0, 0
+        else:
+            raise ValueError
 
         assert (input_h + 2 * padding_h - filter_h) % stride_h == 0
         assert (input_w + 2 * padding_w - filter_w) % stride_w == 0
@@ -69,6 +78,7 @@ def get_conv_output_shape(input_shape, filter_shape, stride_shape, rank=2):
 def _get_tensor2matrix_indices(tensor_shape,
                                filter_shape,
                                stride_shape,
+                               padding,
                                rank=2):
     if rank == 2:
         batch_size, input_h, input_w, channels = tensor_shape
@@ -78,6 +88,7 @@ def _get_tensor2matrix_indices(tensor_shape,
         _, output_h, output_w, _ = get_conv_output_shape(tensor_shape,
                                                          filter_shape,
                                                          stride_shape,
+                                                         padding,
                                                          rank=2)
 
         i0 = np.repeat(np.arange(filter_h), filter_w)
@@ -126,15 +137,12 @@ def tensor_to_matrix(tensor, filter_shape, stride_shape, padding, rank=2):
                 (0, 0)  # channels
             )
             tensor = np.pad(tensor, pad_width, mode='constant')
-        elif padding == 'valid':
-            padding_h, padding_w = 0, 0
-        else:
-            raise ValueError
 
         i, j, k = _get_tensor2matrix_indices(tensor.shape,
                                              filter_shape,
-                                             (padding_h, padding_w),
-                                             stride_shape)
+                                             stride_shape,
+                                             padding,
+                                             rank=2)
 
         mat = tensor[:, i, j, k]
         mat = mat.transpose(1, 2, 0).reshape(filter_h * filter_w * channels, -1)

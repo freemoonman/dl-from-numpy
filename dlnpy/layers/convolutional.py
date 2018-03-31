@@ -1,7 +1,7 @@
 import numpy as np
 
 from .base import Layer
-from ._utils import to_tuple, tensor_to_matrix, get_conv_output_shape
+from .utils import to_tuple, tensor_to_matrix, get_conv_output_shape
 
 
 class _Conv(Layer):

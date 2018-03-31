@@ -5,8 +5,10 @@ from urllib.error import URLError, HTTPError
 
 import numpy as np
 
-
-HOME_PATH = os.environ['HOMEPATH']
+try:
+    HOME_PATH = os.environ['HOME']
+except KeyError:
+    HOME_PATH = os.environ['HOMEPATH']
 DATA_PATH = os.path.join(HOME_PATH, '.dlnpy', 'datasets')
 
 

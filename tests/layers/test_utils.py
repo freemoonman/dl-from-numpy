@@ -1,6 +1,6 @@
 import numpy as np
 
-from dlnpy.layers._utils import tensor_to_matrix
+from dlnpy.layers.utils import tensor_to_matrix
 
 batch_size = 2
 channels = 3

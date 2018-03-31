@@ -1,7 +1,7 @@
 import os
 import numpy as np
 
-from ._utils import get_file, download, save_npz
+from .utils import get_file, download, save_npz
 
 
 def load_data(path='digits.npz'):
