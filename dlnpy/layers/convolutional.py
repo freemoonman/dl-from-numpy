@@ -1,7 +1,7 @@
 import numpy as np
 
 from .base import Layer
-from .utils import to_tuple, tensor_to_matrix, get_conv_output_shape
+from .utils import to_tuple, get_conv_shape, image2column, column2image
 
 
 class _Conv(Layer):
@@ -27,8 +27,8 @@ class _Conv(Layer):
         self._dkernel = None
         self._dbias = None
 
-        self._x_mat = None
-        self._kernel_mat = None
+        self._cx = None
+        self._ckernel = None
 
     def forward(self, x):
         raise NotImplementedError
@@ -68,13 +68,17 @@ class Conv2D(_Conv):
             self._dbias = np.zeros_like(self._bias)
 
     def calc_output_shape(self):
-        batch_size, output_h, output_w, _ = get_conv_output_shape(
+        output_h, output_w, _, _ = get_conv_shape(
             self._input_shape,
             filter_shape=self._kernel_size,
             stride_shape=self._strides,
+            padding=self._padding,
             rank=self._rank
         )
-        self._output_shape = (batch_size, output_h, output_w, self._filters)
+        self._output_shape = (self._input_shape[0],
+                              output_h,
+                              output_w,
+                              self._filters)
 
     def calc_param_size(self):
         if self._use_bias:
@@ -83,37 +87,44 @@ class Conv2D(_Conv):
             self._param_size = self._kernel.size
 
     def forward(self, x):
-        batch_size, channels, height, width = x.shape
+        batch_size, _, _, _ = x.shape
         self._x = x
-        self._x_mat = tensor_to_matrix(x,
-                                       filter_shape=self._kernel_size,
-                                       stride_shape=self._strides,
-                                       padding=self._padding,
-                                       rank=self._rank)
-        self._kernel_mat = self._kernel.transpose((3, 2, 0, 1))
-        self._kernel_mat = self._kernel_mat.reshape((self._filters, -1))
-        y = np.dot(self._kernel_mat, self._x_mat)
-        # Reshape into (filters, output_h, output_w, batch_size)
-        y = y.reshape((self._filters, *self._output_shape[1:-1], batch_size))
-        y = y.transpose((3, 1, 2, 0))
+        self._cx = image2column(x,
+                                filter_shape=self._kernel_size,
+                                stride_shape=self._strides,
+                                padding=self._padding,
+                                rank=self._rank)
+        self._ckernel = self._kernel.transpose((3, 2, 0, 1))
+        self._ckernel = self._ckernel.reshape((self._filters, -1))
+        y = np.dot(self._cx, self._ckernel.T)
+        # Reshape into (batch_size, output_h, output_w, filters)
+        y = y.reshape((batch_size, *self._output_shape[1:-1], self._filters))
         return y
 
     def backward(self, gy, optimizer):
+        kernel_h, kernel_w, channels, filters = self._kernel.shape
         # Reshape gradient into column shape
-        gy = gy.transpose(1, 2, 3, 0).reshape(self._filters, -1)
+        gy = gy.reshape(-1, self._filters)
 
-        gkernel = np.dot(gy, self._x_mat.T).reshape(self._kernel.shape)
-        gbias = np.sum(gy, axis=-1)
+        gkernel = np.dot(self._cx.T, gy)
+        gkernel = gkernel.transpose((1, 0)).reshape((filters,
+                                                     channels,
+                                                     kernel_h,
+                                                     kernel_w))
+        # Reshape into (kernel_h, kernel_w, channels, filters)
+        gkernel = gkernel.transpose((2, 3, 1, 0))
+        gbias = np.sum(gy, axis=0)
         self._kernel, self._dkernel = \
             optimizer.update(self._kernel, self._dkernel, gkernel)
         self._bias, self._dbias = \
             optimizer.update(self._bias, self._dbias, gbias)
 
-        gy = np.dot(self._kernel_mat.T, gy)
+        cgy = np.dot(gy, self._ckernel)
         # Reshape from column shape to image shape
-        gy = tensor_to_matrix(gy,
-                              filter_shape=self._kernel_size,
-                              stride_shape=self._strides,
-                              padding=self._padding,
-                              rank=self._rank)
-        return gy
+        gx = column2image(cgy,
+                          tensor_shape=self._x.shape,
+                          filter_shape=self._kernel_size,
+                          stride_shape=self._strides,
+                          padding=self._padding,
+                          rank=self._rank)
+        return gx
